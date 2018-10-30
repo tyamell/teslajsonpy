@@ -10,9 +10,10 @@ from teslajsonpy.GPS import GPS, Odometer
 
 
 class Controller:
-    def __init__(self, email, password, update_interval):
+    def __init__(self, email, password, update_interval, wake=True):
         self.__connection = Connection(email, password)
         self.__vehicles = []
+        self.__should_wake = wake
         self.update_interval = update_interval
         self.__update = {}
         self.__climate = {}
@@ -24,9 +25,15 @@ class Controller:
         self.__lock = RLock()
         cars = self.__connection.get('vehicles')['response']
         for car in cars:
-            self.__last_update_time[car['id']] = 0
-            self.__update[car['id']] = True
-            self.update(car['id'])
+            car_id = car['id']
+            self.__climate[car_id] = False
+            self.__charging[car_id] = False
+            self.__state[car_id] = False
+            self.__driving[car_id] = False
+            self.__gui[car_id] = False
+            self.__last_update_time[car_id] = 0
+            self.__update[car_id] = True
+            self.update(car_id)
             self.__vehicles.append(Climate(car, self))
             self.__vehicles.append(Battery(car, self))
             self.__vehicles.append(Range(car, self))
@@ -63,6 +70,11 @@ class Controller:
         with self.__lock:
             if (self.__update[car_id] and
              (cur_time - self.__last_update_time[car_id] > self.update_interval)):
+                if self.__should_wake is False:
+                    cars = self.__connection.get('vehicles')['response']
+                    for car in cars:
+                        if car['id'] == car_id and car['state'] != "online":
+                            return False
                 self.wake_up(car_id)
                 data = self.get(car_id, 'data')
                 if data and data['response']:
@@ -78,6 +90,7 @@ class Controller:
                     self.__state[car_id] = False
                     self.__driving[car_id] = False
                     self.__gui[car_id] = False
+                return True
 
     def get_climate_params(self, car_id):
         return self.__climate[car_id]
